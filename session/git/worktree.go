@@ -41,10 +41,16 @@ func NewGitWorktreeFromStorage(repoPath string, worktreePath string, sessionName
 	}
 }
 
-// NewGitWorktree creates a new GitWorktree instance
-func NewGitWorktree(repoPath string, sessionName string) (tree *GitWorktree, branchname string, err error) {
-	cfg := config.LoadConfig()
-	branchName := fmt.Sprintf("%s%s", cfg.BranchPrefix, sessionName)
+// NewGitWorktree creates a new GitWorktree instance.
+// If branchPrefix is provided, it will be used instead of the config default.
+func NewGitWorktree(repoPath string, sessionName string, branchPrefix string) (tree *GitWorktree, branchname string, err error) {
+	// Use provided branchPrefix or fall back to config
+	prefix := branchPrefix
+	if prefix == "" {
+		cfg := config.LoadConfig()
+		prefix = cfg.BranchPrefix
+	}
+	branchName := fmt.Sprintf("%s%s", prefix, sessionName)
 	// Sanitize the final branch name to handle invalid characters from any source
 	// (e.g., backslashes from Windows domain usernames like DOMAIN\user)
 	branchName = sanitizeBranchName(branchName)

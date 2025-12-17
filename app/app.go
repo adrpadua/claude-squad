@@ -34,6 +34,8 @@ type state int
 
 const (
 	stateDefault state = iota
+	// stateSelectPrefix is the state when the user is selecting a branch prefix.
+	stateSelectPrefix
 	// stateNew is the state when the user is creating a new instance.
 	stateNew
 	// statePrompt is the state when the user is entering a prompt.
@@ -91,6 +93,10 @@ type home struct {
 	textOverlay *overlay.TextOverlay
 	// confirmationOverlay displays confirmation modals
 	confirmationOverlay *overlay.ConfirmationOverlay
+	// selectionOverlay handles selection from a list of options
+	selectionOverlay *overlay.SelectionOverlay
+	// selectedBranchPrefix stores the selected branch prefix for a new instance
+	selectedBranchPrefix string
 }
 
 func newHome(ctx context.Context, program string, autoYes bool) *home {
@@ -307,11 +313,69 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		return m.handleHelpState(msg)
 	}
 
+	// Handle branch prefix selection state
+	if m.state == stateSelectPrefix {
+		// Handle quit commands
+		if msg.String() == "ctrl+c" || msg.Type == tea.KeyEsc {
+			m.state = stateDefault
+			m.selectionOverlay = nil
+			m.selectedBranchPrefix = ""
+			return m, tea.Sequence(
+				tea.WindowSize(),
+				func() tea.Msg {
+					m.menu.SetState(ui.StateDefault)
+					return nil
+				},
+			)
+		}
+
+		shouldClose := m.selectionOverlay.HandleKeyPress(msg)
+		if shouldClose {
+			if m.selectionOverlay.IsCanceled() {
+				// User canceled, go back to default state
+				m.state = stateDefault
+				m.selectionOverlay = nil
+				m.selectedBranchPrefix = ""
+				return m, tea.Sequence(
+					tea.WindowSize(),
+					func() tea.Msg {
+						m.menu.SetState(ui.StateDefault)
+						return nil
+					},
+				)
+			}
+
+			// User selected a prefix, proceed to name input
+			m.selectedBranchPrefix = m.selectionOverlay.GetSelectedOption()
+			m.selectionOverlay = nil
+
+			// Create instance with selected branch prefix
+			instance, err := session.NewInstance(session.InstanceOptions{
+				Title:        "",
+				Path:         ".",
+				Program:      m.program,
+				BranchPrefix: m.selectedBranchPrefix,
+			})
+			if err != nil {
+				m.state = stateDefault
+				return m, m.handleError(err)
+			}
+
+			m.newInstanceFinalizer = m.list.AddInstance(instance)
+			m.list.SetSelectedInstance(m.list.NumInstances() - 1)
+			m.state = stateNew
+
+			return m, nil
+		}
+		return m, nil
+	}
+
 	if m.state == stateNew {
 		// Handle quit commands first. Don't handle q because the user might want to type that.
 		if msg.String() == "ctrl+c" {
 			m.state = stateDefault
 			m.promptAfterName = false
+			m.selectedBranchPrefix = ""
 			m.list.Kill()
 			return m, tea.Sequence(
 				tea.WindowSize(),
@@ -492,18 +556,33 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, m.handleError(
 				fmt.Errorf("you can't create more than %d instances", GlobalInstanceLimit))
 		}
-		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:   "",
-			Path:    ".",
-			Program: m.program,
-		})
-		if err != nil {
-			return m, m.handleError(err)
+
+		// Get branch prefixes from config
+		prefixes := m.appConfig.GetBranchPrefixes()
+
+		// If only one prefix, skip selection and go directly to name input
+		if len(prefixes) == 1 {
+			m.selectedBranchPrefix = prefixes[0]
+			instance, err := session.NewInstance(session.InstanceOptions{
+				Title:        "",
+				Path:         ".",
+				Program:      m.program,
+				BranchPrefix: m.selectedBranchPrefix,
+			})
+			if err != nil {
+				return m, m.handleError(err)
+			}
+
+			m.newInstanceFinalizer = m.list.AddInstance(instance)
+			m.list.SetSelectedInstance(m.list.NumInstances() - 1)
+			m.state = stateNew
+			m.menu.SetState(ui.StateNewInstance)
+			return m, nil
 		}
 
-		m.newInstanceFinalizer = m.list.AddInstance(instance)
-		m.list.SetSelectedInstance(m.list.NumInstances() - 1)
-		m.state = stateNew
+		// Show selection overlay for branch prefix
+		m.selectionOverlay = overlay.NewSelectionOverlay("Select Branch Type", prefixes)
+		m.state = stateSelectPrefix
 		m.menu.SetState(ui.StateNewInstance)
 
 		return m, nil
@@ -731,7 +810,12 @@ func (m *home) View() string {
 		m.errBox.String(),
 	)
 
-	if m.state == statePrompt {
+	if m.state == stateSelectPrefix {
+		if m.selectionOverlay == nil {
+			log.ErrorLog.Printf("selection overlay is nil")
+		}
+		return overlay.PlaceOverlay(0, 0, m.selectionOverlay.Render(), mainView, true, true)
+	} else if m.state == statePrompt {
 		if m.textInputOverlay == nil {
 			log.ErrorLog.Printf("text input overlay is nil")
 		}

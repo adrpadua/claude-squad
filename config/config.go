@@ -35,7 +35,11 @@ type Config struct {
 	// DaemonPollInterval is the interval (ms) at which the daemon polls sessions for autoyes mode.
 	DaemonPollInterval int `json:"daemon_poll_interval"`
 	// BranchPrefix is the prefix used for git branches created by the application.
+	// Deprecated: Use BranchPrefixes instead. Kept for backward compatibility.
 	BranchPrefix string `json:"branch_prefix"`
+	// BranchPrefixes is a list of branch prefixes the user can choose from when creating a new instance.
+	// If empty, falls back to BranchPrefix for backward compatibility.
+	BranchPrefixes []string `json:"branch_prefixes,omitempty"`
 }
 
 // DefaultConfig returns the default configuration
@@ -58,6 +62,13 @@ func DefaultConfig() *Config {
 			}
 			return fmt.Sprintf("%s/", strings.ToLower(user.Username))
 		}(),
+		BranchPrefixes: []string{
+			"fix/",
+			"feature/",
+			"chore/",
+			"docs/",
+			"refactor/",
+		},
 	}
 }
 
@@ -164,4 +175,18 @@ func saveConfig(config *Config) error {
 // SaveConfig exports the saveConfig function for use by other packages
 func SaveConfig(config *Config) error {
 	return saveConfig(config)
+}
+
+// GetBranchPrefixes returns the configured branch prefixes.
+// Falls back to the deprecated BranchPrefix if BranchPrefixes is empty.
+func (c *Config) GetBranchPrefixes() []string {
+	if len(c.BranchPrefixes) > 0 {
+		return c.BranchPrefixes
+	}
+	// Fallback to old BranchPrefix for backward compatibility
+	if c.BranchPrefix != "" {
+		return []string{c.BranchPrefix}
+	}
+	// Ultimate fallback
+	return []string{"session/"}
 }

@@ -51,6 +51,8 @@ type Instance struct {
 	AutoYes bool
 	// Prompt is the initial prompt to pass to the instance on startup
 	Prompt string
+	// BranchPrefix is the prefix used for the git branch (e.g. "fix/", "feature/")
+	BranchPrefix string
 
 	// DiffStats stores the current git diff statistics
 	diffStats *git.DiffStats
@@ -150,6 +152,8 @@ type InstanceOptions struct {
 	Program string
 	// If AutoYes is true, then
 	AutoYes bool
+	// BranchPrefix is the prefix to use for the git branch (e.g. "fix/", "feature/")
+	BranchPrefix string
 }
 
 func NewInstance(opts InstanceOptions) (*Instance, error) {
@@ -162,15 +166,16 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 	}
 
 	return &Instance{
-		Title:     opts.Title,
-		Status:    Ready,
-		Path:      absPath,
-		Program:   opts.Program,
-		Height:    0,
-		Width:     0,
-		CreatedAt: t,
-		UpdatedAt: t,
-		AutoYes:   false,
+		Title:        opts.Title,
+		Status:       Ready,
+		Path:         absPath,
+		Program:      opts.Program,
+		Height:       0,
+		Width:        0,
+		CreatedAt:    t,
+		UpdatedAt:    t,
+		AutoYes:      false,
+		BranchPrefix: opts.BranchPrefix,
 	}, nil
 }
 
@@ -202,7 +207,7 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 	i.tmuxSession = tmuxSession
 
 	if firstTimeSetup {
-		gitWorktree, branchName, err := git.NewGitWorktree(i.Path, i.Title)
+		gitWorktree, branchName, err := git.NewGitWorktree(i.Path, i.Title, i.BranchPrefix)
 		if err != nil {
 			return fmt.Errorf("failed to create git worktree: %w", err)
 		}
